@@ -31,7 +31,6 @@ Runs on `http://localhost:3000` (proxies `/api` requests to backend).
 ## Admin Backend
 
 - Click **Admin** in the header navigation or open the Admin Modal.
-- Secret Key: `admin123`
 - Allows real-time updating of:
   - Windows x64 & ARM64 installer links
   - macOS Apple Silicon & Intel DMG links
