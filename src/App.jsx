@@ -20,7 +20,7 @@ import {
 import { generateSoftwareCopy } from './lib/groq';
 
 const ADMIN_SECRET_PATH = '/admin-login/12345';
-const PRODUCTS_KEY = 'shiftzero_products_v4';
+const PRODUCTS_KEY = 'shiftzero_products_v5';
 const BLOGS_KEY = 'shiftzero_blogs_v2';
 const CATEGORIES_KEY = 'shiftzero_blog_categories_v1';
 const SETTINGS_KEY = 'shiftzero_settings_v2';
@@ -43,10 +43,10 @@ const DEFAULT_PRODUCT = {
   id: 'omni-watermark-removal',
   name: 'Omni Removal',
   tagline: 'Clean watermarks from photos and videos on your Windows PC.',
-  version: 'v1.0.1',
+  version: 'v1.0.2',
   description: 'Free, unlimited desktop tool for removing watermarks from images and videos. Runs on your machine — no uploads, no subscription.',
-  logoUrl: 'https://raw.githubusercontent.com/omniai01/omni-removal/master/assets/logo.svg',
-  imageUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80',
+  logoUrl: '/brand/omni-logo-1x1.jpg',
+  imageUrl: '/brand/omni-banner-16x9.png',
   aspectRatio: '16:9',
   imageFit: 'cover',
   vramReq: '4GB+ VRAM recommended',
@@ -132,12 +132,17 @@ export default function App() {
     if (Array.isArray(saved) && saved.length) {
       return saved.map((p) => {
         if (p?.id === 'omni-watermark-removal' || /omni/i.test(p?.name || '')) {
+          const staleCover = !p.imageUrl || /unsplash\.com/i.test(p.imageUrl);
+          const staleLogo = !p.logoUrl || /githubusercontent\.com|unsplash\.com/i.test(p.logoUrl);
           return {
             ...DEFAULT_PRODUCT,
             ...p,
             name: p.name || DEFAULT_PRODUCT.name,
-            windowsUrl: p.windowsUrl || OMNI_WINDOWS_DOWNLOAD,
-            logoUrl: p.logoUrl || DEFAULT_PRODUCT.logoUrl,
+            version: DEFAULT_PRODUCT.version,
+            windowsUrl: OMNI_WINDOWS_DOWNLOAD,
+            logoUrl: staleLogo ? DEFAULT_PRODUCT.logoUrl : p.logoUrl,
+            imageUrl: staleCover ? DEFAULT_PRODUCT.imageUrl : p.imageUrl,
+            aspectRatio: p.aspectRatio || '16:9',
             isFree: true
           };
         }
@@ -329,10 +334,50 @@ export default function App() {
   useEffect(() => {
     try {
       localStorage.setItem(MAINTENANCE_KEY, maintenanceMode ? '1' : '0');
+      if (typeof BroadcastChannel !== 'undefined') {
+        const bc = new BroadcastChannel('shiftzero_maintenance');
+        bc.postMessage({ maintenance: maintenanceMode });
+        bc.close();
+      }
+      window.dispatchEvent(new CustomEvent('shiftzero-maintenance', { detail: { maintenance: maintenanceMode } }));
     } catch {
       /* ignore */
     }
   }, [maintenanceMode]);
+
+  // Live sync: other tabs / same-tab listeners apply maintenance without refresh
+  useEffect(() => {
+    const apply = (on) => setMaintenanceMode(Boolean(on));
+    const onStorage = (e) => {
+      if (e.key === MAINTENANCE_KEY) apply(e.newValue === '1');
+    };
+    const onCustom = (e) => apply(e?.detail?.maintenance);
+    let bc;
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        bc = new BroadcastChannel('shiftzero_maintenance');
+        bc.onmessage = (ev) => apply(ev?.data?.maintenance);
+      }
+    } catch {
+      /* ignore */
+    }
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('shiftzero-maintenance', onCustom);
+    const poll = setInterval(() => {
+      try {
+        const on = localStorage.getItem(MAINTENANCE_KEY) === '1';
+        setMaintenanceMode((prev) => (prev === on ? prev : on));
+      } catch {
+        /* ignore */
+      }
+    }, 2000);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('shiftzero-maintenance', onCustom);
+      clearInterval(poll);
+      try { bc?.close(); } catch { /* ignore */ }
+    };
+  }, []);
 
   // Site Settings & Socials State (Admin Dynamic)
   const [siteSettings, setSiteSettings] = useState(() => readStore(SETTINGS_KEY, {
@@ -355,20 +400,21 @@ export default function App() {
     id: '',
     name: '',
     tagline: '',
-    version: 'v1.0.0',
+    version: 'v1.0.2',
     description: '',
-    logoUrl: '',
-    imageUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80',
+    logoUrl: '/brand/omni-logo-1x1.jpg',
+    imageUrl: '/brand/omni-banner-16x9.png',
     aspectRatio: '16:9',
     imageFit: 'cover',
     vramReq: '4GB+ VRAM',
-    windowsUrl: '',
+    windowsUrl: OMNI_WINDOWS_DOWNLOAD,
     macUrl: '',
     featuresText: '',
     aiNotes: ''
   });
   const [groqBusy, setGroqBusy] = useState(false);
   const [countryFilter, setCountryFilter] = useState('All');
+  const [softwareFilter, setSoftwareFilter] = useState('All');
 
   // Blog Post Form State (Admin)
   const [editingBlogId, setEditingBlogId] = useState(null);
@@ -393,28 +439,40 @@ export default function App() {
     const avgMs = analytics.totalSessions
       ? analytics.totalDwellMs / analytics.totalSessions
       : 0;
+    const softwareStats = Object.entries(analytics.bySoftware || {}).map(([id, row]) => ({
+      id,
+      name: row.name || id,
+      clicks: row.clicks || 0,
+      downloads: row.downloads || 0,
+      countries: countryBreakdown(row.byCountry || {})
+    }));
+    const selectedSoft = softwareFilter === 'All'
+      ? null
+      : softwareStats.find((s) => s.id === softwareFilter) || products.find((p) => p.id === softwareFilter);
+    const selectedClicks = softwareFilter === 'All'
+      ? (analytics.downloadClicks || 0)
+      : (selectedSoft?.clicks || 0);
+    const selectedDownloads = softwareFilter === 'All'
+      ? (analytics.downloads || 0)
+      : (selectedSoft?.downloads || 0);
     return {
       visitors: analytics.totalVisitors || 0,
       downloads: analytics.downloads || 0,
       clicks: analytics.downloadClicks || 0,
+      selectedClicks,
+      selectedDownloads,
       avgStay: formatDwell(avgMs),
       countries,
       filteredCountries,
-      softwareStats: Object.entries(analytics.bySoftware || {}).map(([id, row]) => ({
-        id,
-        name: row.name || id,
-        clicks: row.clicks || 0,
-        downloads: row.downloads || 0,
-        countries: countryBreakdown(row.byCountry || {})
-      })),
+      softwareStats,
       recent: analytics.recentEvents || []
     };
-  }, [analytics, countryFilter]);
+  }, [analytics, countryFilter, softwareFilter, products]);
 
   const emptySoftwareForm = () => ({
-    id: '', name: '', tagline: '', version: 'v1.0.0', description: '', logoUrl: '',
-    imageUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80',
-    aspectRatio: '16:9', imageFit: 'cover', vramReq: '4GB+ VRAM', windowsUrl: '', macUrl: '',
+    id: '', name: '', tagline: '', version: 'v1.0.2', description: '', logoUrl: '/brand/omni-logo-1x1.jpg',
+    imageUrl: '/brand/omni-banner-16x9.png',
+    aspectRatio: '16:9', imageFit: 'cover', vramReq: '4GB+ VRAM', windowsUrl: OMNI_WINDOWS_DOWNLOAD, macUrl: '',
     featuresText: '', aiNotes: ''
   });
 
@@ -709,22 +767,27 @@ export default function App() {
 
       {/* Public maintenance page — admin portal still reachable via secret URL */}
       {maintenanceMode && currentPage !== 'admin' && !isSiteLoading && (
-        <div className="site-maintenance">
+        <div className="site-maintenance" role="status" aria-live="polite">
+          <div className="site-maintenance-bg" aria-hidden="true">
+            <span className="maint-orb maint-orb-a" />
+            <span className="maint-orb maint-orb-b" />
+            <span className="maint-orb maint-orb-c" />
+            <span className="maint-grid" />
+            <span className="maint-scan" />
+          </div>
           <div className="site-maintenance-card">
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
-              <svg width="56" height="56" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M50 12 L18 44 L34 60 L50 44 Z" fill="#157B86"/>
-                <path d="M50 12 L82 44 L66 60 L50 44 Z" fill="#0e5c65"/>
-                <polygon points="50,54 64,68 50,82 36,68" fill="#157B86" stroke="#E4F3F3" strokeWidth="3"/>
-              </svg>
+            <div className="maint-logo-wrap">
+              <img src="/brand/omni-logo-1x1.jpg" alt="" className="maint-logo" width="72" height="72" />
+              <span className="maint-pulse" aria-hidden="true" />
             </div>
-            <h1 style={{ margin: '0 0 10px', fontSize: '1.7rem', fontWeight: 800, color: '#152529' }}>
-              Site under maintenance
-            </h1>
-            <p style={{ margin: 0, color: '#4a6369', lineHeight: 1.65, fontSize: '0.98rem' }}>
-              This website is under maintenance. Please wait a little while — we will be back soon.
-              Follow our social channels for updates.
+            <p className="maint-kicker">ShiftZero · Temporary pause</p>
+            <h1 className="maint-title">We&apos;ll be right back</h1>
+            <p className="maint-copy">
+              This site is under maintenance. Please wait a little while — we&apos;re polishing things and will return soon.
             </p>
+            <div className="maint-dots" aria-hidden="true">
+              <span /><span /><span />
+            </div>
             <div className="site-maintenance-socials">
               {siteSettings.twitterUrl && <a href={siteSettings.twitterUrl} target="_blank" rel="noreferrer">Twitter / X</a>}
               {siteSettings.githubUrl && <a href={siteSettings.githubUrl} target="_blank" rel="noreferrer">GitHub</a>}
@@ -1383,7 +1446,22 @@ export default function App() {
                   {adminTab === 'dashboard' && (
                     <div>
                       <h3 style={{ fontSize: '1.6rem', fontWeight: 800, color: '#152529', marginBottom: '8px' }}>Live Site Analytics</h3>
-                      <p style={{ fontSize: '0.9rem', color: '#4a6369', marginBottom: '24px' }}>Counts start at zero and grow from real visits, download clicks, and downloads on this browser store.</p>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '16px' }}>
+                        <p style={{ fontSize: '0.9rem', color: '#4a6369', margin: 0 }}>Counts start at zero and grow from real visits, download clicks, and downloads on this browser store.</p>
+                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', color: '#152529', fontWeight: 600 }}>
+                          Software
+                          <select
+                            value={softwareFilter}
+                            onChange={(e) => setSoftwareFilter(e.target.value)}
+                            style={{ padding: '8px 12px', borderRadius: '10px', border: '1px solid #cde5e5', background: '#f2f9f9', fontSize: '0.85rem', minWidth: '180px' }}
+                          >
+                            <option value="All">All software</option>
+                            {products.map((p) => (
+                              <option key={p.id} value={p.id}>{p.name}</option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
 
                       <div className="analytics-four-row">
                         <div style={{ background: '#f2f9f9', border: '1px solid #cde5e5', borderRadius: '20px', padding: '22px' }}>
@@ -1391,12 +1469,12 @@ export default function App() {
                           <div style={{ fontSize: '2.1rem', fontWeight: 800, color: '#152529', marginTop: '4px' }}>{analyticsSummary.visitors}</div>
                         </div>
                         <div style={{ background: '#E4F3F3', border: '1px solid #cde5e5', borderRadius: '20px', padding: '22px' }}>
-                          <div style={{ fontSize: '0.75rem', fontFamily: 'monospace', color: '#157B86', textTransform: 'uppercase', fontWeight: 700 }}>Download Clicks</div>
-                          <div style={{ fontSize: '2.1rem', fontWeight: 800, color: '#157B86', marginTop: '4px' }}>{analyticsSummary.clicks}</div>
+                          <div style={{ fontSize: '0.75rem', fontFamily: 'monospace', color: '#157B86', textTransform: 'uppercase', fontWeight: 700 }}>Download Clicks{softwareFilter !== 'All' ? ' · Selected' : ''}</div>
+                          <div style={{ fontSize: '2.1rem', fontWeight: 800, color: '#157B86', marginTop: '4px' }}>{analyticsSummary.selectedClicks}</div>
                         </div>
                         <div style={{ background: '#f2f9f9', border: '1px solid #cde5e5', borderRadius: '20px', padding: '22px' }}>
-                          <div style={{ fontSize: '0.75rem', fontFamily: 'monospace', color: '#4a6369', textTransform: 'uppercase' }}>Downloads Started</div>
-                          <div style={{ fontSize: '2.1rem', fontWeight: 800, color: '#152529', marginTop: '4px' }}>{analyticsSummary.downloads}</div>
+                          <div style={{ fontSize: '0.75rem', fontFamily: 'monospace', color: '#4a6369', textTransform: 'uppercase' }}>Downloads Started{softwareFilter !== 'All' ? ' · Selected' : ''}</div>
+                          <div style={{ fontSize: '2.1rem', fontWeight: 800, color: '#152529', marginTop: '4px' }}>{analyticsSummary.selectedDownloads}</div>
                         </div>
                         <div style={{ background: '#f2f9f9', border: '1px solid #cde5e5', borderRadius: '20px', padding: '22px' }}>
                           <div style={{ fontSize: '0.75rem', fontFamily: 'monospace', color: '#4a6369', textTransform: 'uppercase' }}>Avg Time On Site</div>
@@ -1456,9 +1534,21 @@ export default function App() {
                         </div>
                       </div>
 
-                      <h4 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#152529', marginBottom: '14px' }}>Per Software</h4>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '14px' }}>
+                        <h4 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#152529', margin: 0 }}>Per Software</h4>
+                        <select
+                          value={softwareFilter}
+                          onChange={(e) => setSoftwareFilter(e.target.value)}
+                          style={{ padding: '8px 12px', borderRadius: '10px', border: '1px solid #cde5e5', background: '#f2f9f9', fontSize: '0.85rem' }}
+                        >
+                          <option value="All">Show all</option>
+                          {products.map((p) => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                          ))}
+                        </select>
+                      </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '28px' }}>
-                        {products.map((prod) => {
+                        {products.filter((prod) => softwareFilter === 'All' || prod.id === softwareFilter).map((prod) => {
                           const row = analyticsSummary.softwareStats.find((s) => s.id === prod.id) || { clicks: 0, downloads: 0, countries: [] };
                           return (
                             <div key={prod.id} style={{ background: '#ffffff', border: '1px solid #cde5e5', borderRadius: '16px', padding: '18px 20px' }}>
@@ -1565,10 +1655,10 @@ export default function App() {
                           </div>
 
                           <div>
-                            <label style={{ display: 'block', fontSize: '0.78rem', fontFamily: 'monospace', color: '#152529', fontWeight: 700, marginBottom: '6px' }}>Logo URL (left icon)</label>
+                            <label style={{ display: 'block', fontSize: '0.78rem', fontFamily: 'monospace', color: '#152529', fontWeight: 700, marginBottom: '6px' }}>Logo URL (1:1 square)</label>
                             <input 
                               type="text" 
-                              placeholder="https://…/logo.png (optional — ShiftZero mark used if empty)" 
+                              placeholder="/brand/omni-logo-1x1.jpg" 
                               value={softwareForm.logoUrl}
                               onChange={(e) => setSoftwareForm({ ...softwareForm, logoUrl: e.target.value })}
                               style={{ width: '100%', padding: '12px 16px', borderRadius: '12px', background: '#ffffff', border: '1px solid #cde5e5', color: '#152529', fontSize: '0.9rem', boxSizing: 'border-box' }}
@@ -1585,14 +1675,17 @@ export default function App() {
 
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
                             <div>
-                              <label style={{ display: 'block', fontSize: '0.78rem', fontFamily: 'monospace', color: '#152529', fontWeight: 700, marginBottom: '6px' }}>Cover Image URL</label>
+                              <label style={{ display: 'block', fontSize: '0.78rem', fontFamily: 'monospace', color: '#152529', fontWeight: 700, marginBottom: '6px' }}>Cover Image URL (16:9 widescreen)</label>
                               <input 
                                 type="text" 
-                                placeholder="https://images.unsplash.com/photo-..." 
+                                placeholder="/brand/omni-banner-16x9.png" 
                                 value={softwareForm.imageUrl}
                                 onChange={(e) => setSoftwareForm({ ...softwareForm, imageUrl: e.target.value })}
                                 style={{ width: '100%', padding: '12px 16px', borderRadius: '12px', background: '#E4F3F3', border: '1px solid #cde5e5', color: '#152529', fontSize: '0.9rem', boxSizing: 'border-box' }}
                               />
+                              <p style={{ margin: '8px 0 0', fontSize: '0.75rem', color: '#4a6369' }}>
+                                Use <code>/brand/omni-banner-16x9.png</code> for the ShiftZero 16:9 banner (already on this site).
+                              </p>
                             </div>
 
                             <div>
@@ -1991,7 +2084,7 @@ export default function App() {
                         <div>
                           <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#152529' }}>Maintenance Mode</h4>
                           <p style={{ margin: '6px 0 0', fontSize: '0.85rem', color: '#4a6369' }}>
-                            When ON, public visitors see a maintenance page with your social links. Admin stays open.
+                            When ON, public visitors see the animated maintenance page with your social links — applies live (no refresh). Admin stays open.
                           </p>
                         </div>
                         <button
