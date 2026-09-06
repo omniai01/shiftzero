@@ -20,19 +20,30 @@ import {
 import { generateSoftwareCopy } from './lib/groq';
 
 const ADMIN_SECRET_PATH = '/admin-login/12345';
-const PRODUCTS_KEY = 'shiftzero_products_v3';
+const PRODUCTS_KEY = 'shiftzero_products_v4';
 const BLOGS_KEY = 'shiftzero_blogs_v2';
 const CATEGORIES_KEY = 'shiftzero_blog_categories_v1';
 const SETTINGS_KEY = 'shiftzero_settings_v2';
+const MAINTENANCE_KEY = 'shiftzero_maintenance_v1';
 
 const OMNI_WINDOWS_DOWNLOAD =
   'https://github.com/omniai01/omni-removal/releases/latest/download/Omni-Watermark-Removal-Final.exe';
+
+/** Always return a direct .exe asset URL — never the GitHub repo/HTML page. */
+function directWindowsDownloadUrl(url) {
+  const raw = String(url || '').trim();
+  if (!raw) return OMNI_WINDOWS_DOWNLOAD;
+  if (/releases\/latest\/download\//i.test(raw) || /releases\/download\//i.test(raw)) return raw;
+  if (/github\.com\/[^/]+\/omni-removal/i.test(raw)) return OMNI_WINDOWS_DOWNLOAD;
+  if (/\.exe(\?|$)/i.test(raw)) return raw;
+  return OMNI_WINDOWS_DOWNLOAD;
+}
 
 const DEFAULT_PRODUCT = {
   id: 'omni-watermark-removal',
   name: 'Omni Removal',
   tagline: 'Clean watermarks from photos and videos on your Windows PC.',
-  version: 'v1.0.0',
+  version: 'v1.0.1',
   description: 'Free, unlimited desktop tool for removing watermarks from images and videos. Runs on your machine — no uploads, no subscription.',
   logoUrl: 'https://raw.githubusercontent.com/omniai01/omni-removal/master/assets/logo.svg',
   imageUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80',
@@ -307,7 +318,21 @@ export default function App() {
   const [adminKey, setAdminKey] = useState('');
   const [adminStatus, setAdminStatus] = useState('');
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
-  const [maintenanceMode, setMaintenanceMode] = useState(false);
+  const [maintenanceMode, setMaintenanceMode] = useState(() => {
+    try {
+      return localStorage.getItem(MAINTENANCE_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(MAINTENANCE_KEY, maintenanceMode ? '1' : '0');
+    } catch {
+      /* ignore */
+    }
+  }, [maintenanceMode]);
 
   // Site Settings & Socials State (Admin Dynamic)
   const [siteSettings, setSiteSettings] = useState(() => readStore(SETTINGS_KEY, {
@@ -550,20 +575,37 @@ export default function App() {
     const next = await trackDownloadClick(prod.id, prod.name);
     setAnalytics(next);
 
-    if (prod.windowsUrl) {
-      const started = await trackDownloadStart(prod.id, prod.name, `${prod.name} Windows`);
-      setAnalytics(started);
-      const a = document.createElement('a');
-      a.href = prod.windowsUrl;
-      a.rel = 'noopener';
-      a.download = '';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    } else {
-      setActiveBadgeToast('Download link not set yet — add Windows URL in Admin → Software.');
-      setTimeout(() => setActiveBadgeToast(''), 4000);
-    }
+    const url = directWindowsDownloadUrl(prod.windowsUrl || OMNI_WINDOWS_DOWNLOAD);
+    const started = await trackDownloadStart(prod.id, prod.name, `${prod.name} Windows`);
+    setAnalytics(started);
+
+    // Direct asset URL — avoid GitHub HTML pages (especially on mobile)
+    const a = document.createElement('a');
+    a.href = url;
+    a.rel = 'noopener';
+    a.setAttribute('download', 'Omni-Watermark-Removal-Final.exe');
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+
+    // Fallback for stubborn mobile browsers
+    window.setTimeout(() => {
+      try {
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        iframe.src = url;
+        document.body.appendChild(iframe);
+        window.setTimeout(() => {
+          try {
+            document.body.removeChild(iframe);
+          } catch {
+            /* ignore */
+          }
+        }, 60000);
+      } catch {
+        window.location.assign(url);
+      }
+    }, 250);
   };
 
   const handleGroqFill = async () => {
@@ -614,10 +656,10 @@ export default function App() {
 
     if (editingBlogId) {
       setBlogs(blogs.map(b => b.id === editingBlogId ? newBlog : b));
-      setActiveBadgeToast(`Updated blog article: ${newBlog.title}`);
+      setActiveBadgeToast(`Saved to live site: ${newBlog.title}`);
     } else {
       setBlogs([newBlog, ...blogs]);
-      setActiveBadgeToast(`Published blog article: ${newBlog.title}`);
+      setActiveBadgeToast(`Published & saved to live site: ${newBlog.title}`);
     }
 
     setEditingBlogId(null);
@@ -665,6 +707,36 @@ export default function App() {
         </div>
       </div>
 
+      {/* Public maintenance page — admin portal still reachable via secret URL */}
+      {maintenanceMode && currentPage !== 'admin' && !isSiteLoading && (
+        <div className="site-maintenance">
+          <div className="site-maintenance-card">
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+              <svg width="56" height="56" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M50 12 L18 44 L34 60 L50 44 Z" fill="#157B86"/>
+                <path d="M50 12 L82 44 L66 60 L50 44 Z" fill="#0e5c65"/>
+                <polygon points="50,54 64,68 50,82 36,68" fill="#157B86" stroke="#E4F3F3" strokeWidth="3"/>
+              </svg>
+            </div>
+            <h1 style={{ margin: '0 0 10px', fontSize: '1.7rem', fontWeight: 800, color: '#152529' }}>
+              Site under maintenance
+            </h1>
+            <p style={{ margin: 0, color: '#4a6369', lineHeight: 1.65, fontSize: '0.98rem' }}>
+              This website is under maintenance. Please wait a little while — we will be back soon.
+              Follow our social channels for updates.
+            </p>
+            <div className="site-maintenance-socials">
+              {siteSettings.twitterUrl && <a href={siteSettings.twitterUrl} target="_blank" rel="noreferrer">Twitter / X</a>}
+              {siteSettings.githubUrl && <a href={siteSettings.githubUrl} target="_blank" rel="noreferrer">GitHub</a>}
+              {siteSettings.discordUrl && <a href={siteSettings.discordUrl} target="_blank" rel="noreferrer">Discord</a>}
+              {siteSettings.contactEmail && <a href={`mailto:${siteSettings.contactEmail}`}>Email</a>}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!(maintenanceMode && currentPage !== 'admin') && (
+      <>
       {/* Background Animated Gradient Mesh */}
       {currentPage !== 'admin' && <div className="hero-animated-bg" />}
 
@@ -727,14 +799,6 @@ export default function App() {
             <ArrowRight style={{ width: '16px', height: '16px', color: '#157B86' }} />
           </button>
 
-          <button onClick={() => { setMobileMenuOpen(false); setShowLogoModal(true); }} className="mobile-menu-link" style={{ background: '#E4F3F3', color: '#157B86', fontWeight: 700 }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Download style={{ width: '16px', height: '16px', color: '#157B86' }} />
-              Download Logo Assets
-            </span>
-            <ArrowRight style={{ width: '16px', height: '16px', color: '#157B86' }} />
-          </button>
-
         </div>
       </div>
       </>
@@ -765,14 +829,6 @@ export default function App() {
             <button onClick={() => navigateTo('how-it-works')} className={`header-nav-link ${currentPage === 'how-it-works' ? 'active' : ''}`}>How It Works</button>
             <button onClick={() => navigateTo('products')} className={`header-nav-link ${currentPage === 'products' || currentPage === 'product-detail' ? 'active' : ''}`}>Products</button>
             <button onClick={() => navigateTo('blogs')} className={`header-nav-link ${currentPage === 'blogs' || currentPage === 'blog-detail' ? 'active' : ''}`}>Blogs</button>
-            
-            <button 
-              onClick={() => setShowLogoModal(true)} 
-              style={{ background: '#E4F3F3', border: '1px solid #cde5e5', borderRadius: '9999px', padding: '6px 14px', color: '#157B86', fontWeight: 700, fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}
-            >
-              <Download style={{ width: '14px', height: '14px' }} />
-              <span>Download Logo</span>
-            </button>
           </nav>
 
           {/* Mobile Hamburger Button */}
@@ -974,14 +1030,27 @@ export default function App() {
 
           <div style={{ background: '#ffffff', border: '1px solid #cde5e5', borderRadius: '28px', padding: '40px', boxShadow: '0 10px 30px rgba(21,123,134,0.05)' }}>
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '20px', marginBottom: '24px', paddingBottom: '20px', borderBottom: '1px solid #cde5e5' }}>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '6px' }}>
-                  <h1 style={{ fontSize: '2.4rem', fontWeight: 800, color: '#152529', margin: 0 }}>{selectedProductDetail.name}</h1>
-                  <span style={{ background: '#157B86', color: '#ffffff', padding: '4px 12px', borderRadius: '9999px', fontSize: '0.8rem', fontWeight: 700, fontFamily: 'monospace' }}>
-                    {selectedProductDetail.version}
-                  </span>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px', minWidth: 0, flex: 1 }}>
+                <div className="product-logo-mark" aria-hidden="true">
+                  {selectedProductDetail.logoUrl ? (
+                    <img src={selectedProductDetail.logoUrl} alt="" />
+                  ) : (
+                    <svg width="36" height="36" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M50 12 L18 44 L34 60 L50 44 Z" fill="#157B86"/>
+                      <path d="M50 12 L82 44 L66 60 L50 44 Z" fill="#0e5c65"/>
+                      <polygon points="50,54 64,68 50,82 36,68" fill="#157B86" stroke="#E4F3F3" strokeWidth="3"/>
+                    </svg>
+                  )}
                 </div>
-                <p style={{ fontSize: '1.1rem', color: '#157B86', fontWeight: 600, margin: 0 }}>{selectedProductDetail.tagline}</p>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '12px', marginBottom: '6px' }}>
+                    <h1 style={{ fontSize: 'clamp(1.6rem, 4vw, 2.4rem)', fontWeight: 800, color: '#152529', margin: 0 }}>{selectedProductDetail.name}</h1>
+                    <span style={{ background: '#157B86', color: '#ffffff', padding: '4px 12px', borderRadius: '9999px', fontSize: '0.8rem', fontWeight: 700, fontFamily: 'monospace' }}>
+                      {selectedProductDetail.version}
+                    </span>
+                  </div>
+                  <p style={{ fontSize: '1.05rem', color: '#157B86', fontWeight: 600, margin: 0 }}>{selectedProductDetail.tagline}</p>
+                </div>
               </div>
 
               <button type="button" onClick={() => handleWindowsDownload(selectedProductDetail)} className="btn-cyan-solid" style={{ padding: '14px 28px' }}>
@@ -1006,11 +1075,11 @@ export default function App() {
             </p>
 
             <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#152529', marginBottom: '16px' }}>Key Engine Specifications</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '40px' }}>
+            <div className="specs-four-row">
               {selectedProductDetail.features?.map((feat, idx) => (
-                <div key={idx} style={{ background: '#152529', color: '#E4F3F3', borderRadius: '16px', padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <CheckCircle2 style={{ width: '18px', height: '18px', color: '#157B86', flexShrink: 0 }} />
-                  <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{feat}</span>
+                <div key={idx} className="spec-chip">
+                  <CheckCircle2 style={{ width: '18px', height: '18px', color: '#157B86', flexShrink: 0, marginTop: 2 }} />
+                  <span>{feat}</span>
                 </div>
               ))}
             </div>
@@ -1316,7 +1385,7 @@ export default function App() {
                       <h3 style={{ fontSize: '1.6rem', fontWeight: 800, color: '#152529', marginBottom: '8px' }}>Live Site Analytics</h3>
                       <p style={{ fontSize: '0.9rem', color: '#4a6369', marginBottom: '24px' }}>Counts start at zero and grow from real visits, download clicks, and downloads on this browser store.</p>
 
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '28px' }}>
+                      <div className="analytics-four-row">
                         <div style={{ background: '#f2f9f9', border: '1px solid #cde5e5', borderRadius: '20px', padding: '22px' }}>
                           <div style={{ fontSize: '0.75rem', fontFamily: 'monospace', color: '#4a6369', textTransform: 'uppercase' }}>Visitors</div>
                           <div style={{ fontSize: '2.1rem', fontWeight: 800, color: '#152529', marginTop: '4px' }}>{analyticsSummary.visitors}</div>
@@ -1645,9 +1714,11 @@ export default function App() {
                         {products.map((prod) => (
                           <div key={prod.id} style={{ background: '#ffffff', border: '1px solid #cde5e5', borderRadius: '20px', padding: '24px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '20px', boxShadow: '0 4px 16px rgba(21,123,134,0.03)' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                              {(prod.logoUrl || prod.imageUrl) && (
-                                <img src={prod.logoUrl || prod.imageUrl} alt={prod.name} style={{ width: '64px', height: '64px', borderRadius: '14px', objectFit: 'cover' }} />
-                              )}
+                              <div className="product-logo-mark">
+                                {(prod.logoUrl || DEFAULT_PRODUCT.logoUrl) ? (
+                                  <img src={prod.logoUrl || DEFAULT_PRODUCT.logoUrl} alt={prod.name} />
+                                ) : null}
+                              </div>
                               <div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                   <h5 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#152529', margin: 0 }}>{prod.name}</h5>
@@ -1893,8 +1964,10 @@ export default function App() {
 
                               <button 
                                 onClick={() => {
-                                  setBlogs(blogs.filter(x => x.id !== b.id));
-                                  setActiveBadgeToast(`Deleted blog article: ${b.title}`);
+                                  const next = blogs.filter(x => x.id !== b.id);
+                                  setBlogs(next);
+                                  localStorage.setItem(BLOGS_KEY, JSON.stringify(next));
+                                  setActiveBadgeToast(`Deleted & saved to live site: ${b.title}`);
                                   setTimeout(() => setActiveBadgeToast(''), 3000);
                                 }}
                                 style={{ background: '#fff1f2', border: '1px solid #fecdd3', borderRadius: '10px', padding: '10px 18px', color: '#9f1239', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
@@ -1914,9 +1987,32 @@ export default function App() {
                     <div>
                       <h3 style={{ fontSize: '1.6rem', fontWeight: 800, color: '#152529', marginBottom: '24px' }}>Website Branding & Social Links Settings</h3>
 
+                      <div style={{ background: maintenanceMode ? '#fff7ed' : '#f2f9f9', border: `1px solid ${maintenanceMode ? '#fdba74' : '#cde5e5'}`, borderRadius: '20px', padding: '22px', marginBottom: '24px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
+                        <div>
+                          <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#152529' }}>Maintenance Mode</h4>
+                          <p style={{ margin: '6px 0 0', fontSize: '0.85rem', color: '#4a6369' }}>
+                            When ON, public visitors see a maintenance page with your social links. Admin stays open.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = !maintenanceMode;
+                            setMaintenanceMode(next);
+                            setActiveBadgeToast(next ? 'Maintenance mode ON — site shows wait page.' : 'Maintenance mode OFF — site is live.');
+                            setTimeout(() => setActiveBadgeToast(''), 3500);
+                          }}
+                          className="btn-cyan-solid"
+                          style={{ padding: '12px 18px', background: maintenanceMode ? '#c2410c' : '#157B86' }}
+                        >
+                          {maintenanceMode ? 'Turn Maintenance OFF' : 'Turn Maintenance ON'}
+                        </button>
+                      </div>
+
                       <form onSubmit={(e) => {
                         e.preventDefault();
-                        setActiveBadgeToast('Site settings & social links updated!');
+                        localStorage.setItem(SETTINGS_KEY, JSON.stringify(siteSettings));
+                        setActiveBadgeToast('Site settings & social links saved!');
                         setTimeout(() => setActiveBadgeToast(''), 4000);
                       }} style={{ background: '#f2f9f9', border: '1px solid #cde5e5', borderRadius: '24px', padding: '28px' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', marginBottom: '24px' }}>
@@ -2215,6 +2311,9 @@ export default function App() {
             </div>
           </div>
         </div>
+      )}
+
+      </>
       )}
 
     </div>

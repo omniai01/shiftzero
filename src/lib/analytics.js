@@ -54,17 +54,46 @@ function ensureSoftware(data, productId, name) {
 async function detectCountry() {
   try {
     const cached = sessionStorage.getItem('sz_country');
-    if (cached) return cached;
-    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    const timer = controller ? setTimeout(() => controller.abort(), 4000) : null;
-    const res = await fetch('https://ipapi.co/json/', controller ? { signal: controller.signal } : undefined);
-    if (timer) clearTimeout(timer);
-    if (!res.ok) throw new Error('geo fail');
-    const json = await res.json();
-    const country = json.country_name || json.country || 'Unknown';
+    if (cached && cached !== 'Unknown') return cached;
+
+    const controllers = [];
+    const tryFetch = async (url, pick) => {
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      if (controller) {
+        controllers.push(controller);
+        setTimeout(() => controller.abort(), 4500);
+      }
+      const res = await fetch(url, controller ? { signal: controller.signal } : undefined);
+      if (!res.ok) throw new Error('geo fail');
+      const json = await res.json();
+      const country = pick(json);
+      if (!country || country === 'Unknown') throw new Error('empty');
+      return country;
+    };
+
+    const country = await Promise.any([
+      tryFetch('https://ipwho.is/', (j) => (j.success === false ? null : j.country)),
+      tryFetch('https://get.geojs.io/v1/ip/geo.json', (j) => j.country || j.country_name),
+      tryFetch('https://ipapi.co/json/', (j) => j.country_name || j.country),
+    ]);
+
     sessionStorage.setItem('sz_country', country);
     return country;
   } catch {
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+      // Soft hint from timezone (better than Unknown when geo APIs block)
+      if (/Karachi|Pakistan/i.test(tz)) return 'Pakistan';
+      if (/New_York|Chicago|Los_Angeles|Denver|America\//i.test(tz)) return 'United States';
+      if (/London|Europe\/London/i.test(tz)) return 'United Kingdom';
+      if (/Berlin|Europe\/Berlin/i.test(tz)) return 'Germany';
+      if (/Tokyo|Asia\/Tokyo/i.test(tz)) return 'Japan';
+      if (/Dubai|Asia\/Dubai/i.test(tz)) return 'United Arab Emirates';
+      if (/Shanghai|Hong_Kong|Asia\/Shanghai/i.test(tz)) return 'China';
+      if (/Kolkata|Asia\/Kolkata/i.test(tz)) return 'India';
+    } catch {
+      /* ignore */
+    }
     return 'Unknown';
   }
 }
