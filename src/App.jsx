@@ -43,7 +43,7 @@ const DEFAULT_PRODUCT = {
   id: 'omni-watermark-removal',
   name: 'Omni Removal',
   tagline: 'Clean watermarks from photos and videos on your Windows PC.',
-  version: 'v1.0.2',
+  version: 'v1.0.3',
   description: 'Free, unlimited desktop tool for removing watermarks from images and videos. Runs on your machine — no uploads, no subscription.',
   logoUrl: '/brand/omni-logo-1x1.jpg',
   imageUrl: '/brand/omni-banner-16x9.png',
@@ -400,7 +400,7 @@ export default function App() {
     id: '',
     name: '',
     tagline: '',
-    version: 'v1.0.2',
+    version: 'v1.0.3',
     description: '',
     logoUrl: '/brand/omni-logo-1x1.jpg',
     imageUrl: '/brand/omni-banner-16x9.png',
@@ -470,7 +470,7 @@ export default function App() {
   }, [analytics, countryFilter, softwareFilter, products]);
 
   const emptySoftwareForm = () => ({
-    id: '', name: '', tagline: '', version: 'v1.0.2', description: '', logoUrl: '/brand/omni-logo-1x1.jpg',
+    version: 'v1.0.3', description: '', logoUrl: '/brand/omni-logo-1x1.jpg',
     imageUrl: '/brand/omni-banner-16x9.png',
     aspectRatio: '16:9', imageFit: 'cover', vramReq: '4GB+ VRAM', windowsUrl: OMNI_WINDOWS_DOWNLOAD, macUrl: '',
     featuresText: '', aiNotes: ''
