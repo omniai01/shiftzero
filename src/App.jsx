@@ -20,23 +20,26 @@ import {
 import { generateSoftwareCopy } from './lib/groq';
 
 const ADMIN_SECRET_PATH = '/admin-login/12345';
-const PRODUCTS_KEY = 'shiftzero_products_v2';
+const PRODUCTS_KEY = 'shiftzero_products_v3';
 const BLOGS_KEY = 'shiftzero_blogs_v2';
 const CATEGORIES_KEY = 'shiftzero_blog_categories_v1';
 const SETTINGS_KEY = 'shiftzero_settings_v2';
 
+const OMNI_WINDOWS_DOWNLOAD =
+  'https://github.com/omniai01/omni-removal/releases/latest/download/Omni-Watermark-Removal-Final.exe';
+
 const DEFAULT_PRODUCT = {
   id: 'omni-watermark-removal',
-  name: 'Omni Watermark Removal',
+  name: 'Omni Removal',
   tagline: 'Clean watermarks from photos and videos on your Windows PC.',
   version: 'v1.0.0',
   description: 'Free, unlimited desktop tool for removing watermarks from images and videos. Runs on your machine — no uploads, no subscription.',
-  logoUrl: '',
+  logoUrl: 'https://raw.githubusercontent.com/omniai01/omni-removal/master/assets/logo.svg',
   imageUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80',
   aspectRatio: '16:9',
   imageFit: 'cover',
   vramReq: '4GB+ VRAM recommended',
-  windowsUrl: '',
+  windowsUrl: OMNI_WINDOWS_DOWNLOAD,
   macUrl: '',
   isFree: true,
   features: [
@@ -46,7 +49,7 @@ const DEFAULT_PRODUCT = {
     'No account or cloud upload required'
   ],
   faqs: [
-    { q: 'Is Omni Watermark Removal free?', a: 'Yes. It is free forever with unlimited local use.' },
+    { q: 'Is Omni Removal free?', a: 'Yes. It is free forever with unlimited local use.' },
     { q: 'Do my files leave my computer?', a: 'No. Cleaning runs on your device.' }
   ]
 };
@@ -112,10 +115,24 @@ export default function App() {
   const [preloaderStatusText, setPreloaderStatusText] = useState('Opening…');
   const [preloaderShowCard, setPreloaderShowCard] = useState(false);
 
-  // Software Products — only Omni by default (admin managed + persisted)
+  // Software Products — Omni Removal by default (admin managed + persisted)
   const [products, setProducts] = useState(() => {
     const saved = readStore(PRODUCTS_KEY, null);
-    if (Array.isArray(saved) && saved.length) return saved;
+    if (Array.isArray(saved) && saved.length) {
+      return saved.map((p) => {
+        if (p?.id === 'omni-watermark-removal' || /omni/i.test(p?.name || '')) {
+          return {
+            ...DEFAULT_PRODUCT,
+            ...p,
+            name: p.name || DEFAULT_PRODUCT.name,
+            windowsUrl: p.windowsUrl || OMNI_WINDOWS_DOWNLOAD,
+            logoUrl: p.logoUrl || DEFAULT_PRODUCT.logoUrl,
+            isFree: true
+          };
+        }
+        return p;
+      });
+    }
     return [DEFAULT_PRODUCT];
   });
 
