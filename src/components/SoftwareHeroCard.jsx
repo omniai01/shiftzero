@@ -54,7 +54,7 @@ export default function SoftwareHeroCard({ product, onDownload, onDetails }) {
               <path d="M3 5.5C3 4.12 4.12 3 5.5 3h2.1c.3 0 .58.13.77.36l1.16 1.39c.19.23.47.36.77.36H18.5C19.88 5.11 21 6.23 21 7.61V18.5c0 1.38-1.12 2.5-2.5 2.5h-13C4.12 21 3 19.88 3 18.5v-13z" opacity=".15" />
               <path d="M9.5 11.25h5v1.5h-5v-1.5zm0 3h5v1.5h-5v-1.5zM4.5 6.75h6.2l1.1 1.3H19.5v10.5h-15V6.75z" />
             </svg>
-            <span>DOWNLOAD FOR WINDOWS</span>
+            <span>DOWNLOAD v{(product.version || '1.0.3').replace(/^v/i, '')} · WINDOWS</span>
           </button>
 
           {onDetails && (
