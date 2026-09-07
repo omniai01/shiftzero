@@ -20,7 +20,7 @@ import {
 import { generateSoftwareCopy } from './lib/groq';
 
 const ADMIN_SECRET_PATH = '/admin-login/12345';
-const PRODUCTS_KEY = 'shiftzero_products_v5';
+const PRODUCTS_KEY = 'shiftzero_products_v6';
 const BLOGS_KEY = 'shiftzero_blogs_v2';
 const CATEGORIES_KEY = 'shiftzero_blog_categories_v1';
 const SETTINGS_KEY = 'shiftzero_settings_v2';
@@ -28,6 +28,8 @@ const MAINTENANCE_KEY = 'shiftzero_maintenance_v1';
 
 const OMNI_WINDOWS_DOWNLOAD =
   'https://github.com/omniai01/omni-removal/releases/latest/download/Omni-Watermark-Removal-Final.exe';
+const SHIFTGRAB_WINDOWS_DOWNLOAD =
+  'https://github.com/omniai01/shiftgrab/releases/latest/download/ShiftGrab-Final.exe';
 
 /** Always return a direct .exe asset URL — never the GitHub repo/HTML page. */
 function directWindowsDownloadUrl(url) {
@@ -35,8 +37,9 @@ function directWindowsDownloadUrl(url) {
   if (!raw) return OMNI_WINDOWS_DOWNLOAD;
   if (/releases\/latest\/download\//i.test(raw) || /releases\/download\//i.test(raw)) return raw;
   if (/github\.com\/[^/]+\/omni-removal/i.test(raw)) return OMNI_WINDOWS_DOWNLOAD;
+  if (/github\.com\/[^/]+\/shiftgrab/i.test(raw)) return SHIFTGRAB_WINDOWS_DOWNLOAD;
   if (/\.exe(\?|$)/i.test(raw)) return raw;
-  return OMNI_WINDOWS_DOWNLOAD;
+  return raw;
 }
 
 const DEFAULT_PRODUCT = {
@@ -64,6 +67,35 @@ const DEFAULT_PRODUCT = {
     { q: 'Do my files leave my computer?', a: 'No. Cleaning runs on your device.' }
   ]
 };
+
+const SHIFTGRAB_PRODUCT = {
+  id: 'shiftgrab',
+  name: 'ShiftGrab',
+  tagline: 'Download YouTube videos and playlists on your Windows PC.',
+  version: 'v1.1.0',
+  description:
+    'On-device YouTube downloader by ShiftZero. Paste a link, pick quality or MP3, and save locally — nothing uploads to ShiftZero servers.',
+  logoUrl: '/brand/shiftgrab-logo.png',
+  imageUrl: '/brand/shiftgrab-banner-16x9.png',
+  aspectRatio: '16:9',
+  imageFit: 'cover',
+  vramReq: 'Any modern PC',
+  windowsUrl: SHIFTGRAB_WINDOWS_DOWNLOAD,
+  macUrl: '',
+  isFree: true,
+  features: [
+    'YouTube video & playlist downloads',
+    'Quality picker + MP3 audio',
+    'Runs fully on your Windows PC',
+    'Free forever — no account required'
+  ],
+  faqs: [
+    { q: 'Is ShiftGrab free?', a: 'Yes. Free forever for local use.' },
+    { q: 'Do my downloads leave my PC?', a: 'No. Files save directly to folders you choose.' }
+  ]
+};
+
+const DEFAULT_PRODUCTS = [DEFAULT_PRODUCT, SHIFTGRAB_PRODUCT];
 
 const DEFAULT_BLOGS = [
   {
@@ -126,30 +158,44 @@ export default function App() {
   const [preloaderStatusText, setPreloaderStatusText] = useState('Opening…');
   const [preloaderShowCard, setPreloaderShowCard] = useState(false);
 
-  // Software Products — Omni Removal by default (admin managed + persisted)
+  // Software Products — Omni Removal + ShiftGrab by default (admin managed + persisted)
   const [products, setProducts] = useState(() => {
     const saved = readStore(PRODUCTS_KEY, null);
-    if (Array.isArray(saved) && saved.length) {
-      return saved.map((p) => {
-        if (p?.id === 'omni-watermark-removal' || /omni/i.test(p?.name || '')) {
-          const staleCover = !p.imageUrl || /unsplash\.com/i.test(p.imageUrl);
-          const staleLogo = !p.logoUrl || /githubusercontent\.com|unsplash\.com/i.test(p.logoUrl);
-          return {
-            ...DEFAULT_PRODUCT,
-            ...p,
-            name: p.name || DEFAULT_PRODUCT.name,
-            version: DEFAULT_PRODUCT.version,
-            windowsUrl: OMNI_WINDOWS_DOWNLOAD,
-            logoUrl: staleLogo ? DEFAULT_PRODUCT.logoUrl : p.logoUrl,
-            imageUrl: staleCover ? DEFAULT_PRODUCT.imageUrl : p.imageUrl,
-            aspectRatio: p.aspectRatio || '16:9',
-            isFree: true
-          };
-        }
-        return p;
-      });
-    }
-    return [DEFAULT_PRODUCT];
+    let list = Array.isArray(saved) && saved.length ? saved : DEFAULT_PRODUCTS;
+    list = list.map((p) => {
+      if (p?.id === 'omni-watermark-removal' || (/omni/i.test(p?.name || '') && !/shiftgrab/i.test(p?.id || ''))) {
+        const staleCover = !p.imageUrl || /unsplash\.com/i.test(p.imageUrl);
+        const staleLogo = !p.logoUrl || /githubusercontent\.com|unsplash\.com/i.test(p.logoUrl);
+        return {
+          ...DEFAULT_PRODUCT,
+          ...p,
+          name: p.name || DEFAULT_PRODUCT.name,
+          version: DEFAULT_PRODUCT.version,
+          windowsUrl: OMNI_WINDOWS_DOWNLOAD,
+          logoUrl: staleLogo ? DEFAULT_PRODUCT.logoUrl : p.logoUrl,
+          imageUrl: staleCover ? DEFAULT_PRODUCT.imageUrl : p.imageUrl,
+          aspectRatio: p.aspectRatio || '16:9',
+          isFree: true
+        };
+      }
+      if (p?.id === 'shiftgrab' || /shiftgrab/i.test(p?.name || '')) {
+        return {
+          ...SHIFTGRAB_PRODUCT,
+          ...p,
+          name: p.name || SHIFTGRAB_PRODUCT.name,
+          version: SHIFTGRAB_PRODUCT.version,
+          windowsUrl: SHIFTGRAB_WINDOWS_DOWNLOAD,
+          logoUrl: p.logoUrl || SHIFTGRAB_PRODUCT.logoUrl,
+          imageUrl: p.imageUrl || SHIFTGRAB_PRODUCT.imageUrl,
+          aspectRatio: p.aspectRatio || '16:9',
+          isFree: true
+        };
+      }
+      return p;
+    });
+    if (!list.some((p) => p?.id === 'shiftgrab')) list = [...list, SHIFTGRAB_PRODUCT];
+    if (!list.some((p) => p?.id === 'omni-watermark-removal')) list = [DEFAULT_PRODUCT, ...list];
+    return list;
   });
 
   // Blogs — trimmed to Omni-relevant posts
