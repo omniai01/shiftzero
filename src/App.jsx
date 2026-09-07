@@ -20,7 +20,7 @@ import {
 import { generateSoftwareCopy } from './lib/groq';
 
 const ADMIN_SECRET_PATH = '/admin-login/12345';
-const PRODUCTS_KEY = 'shiftzero_products_v7';
+const PRODUCTS_KEY = 'shiftzero_products_v8';
 const BLOGS_KEY = 'shiftzero_blogs_v2';
 const CATEGORIES_KEY = 'shiftzero_blog_categories_v1';
 const SETTINGS_KEY = 'shiftzero_settings_v2';
@@ -72,7 +72,7 @@ const SHIFTGRAB_PRODUCT = {
   id: 'shiftgrab',
   name: 'ShiftGrab',
   tagline: 'Download YouTube videos and playlists on your Windows PC.',
-  version: 'v1.1.1',
+  version: 'v1.1.2',
   description:
     'On-device YouTube downloader by ShiftZero. Paste a link, pick quality or MP3, and save locally — nothing uploads to ShiftZero servers.',
   logoUrl: '/brand/shiftgrab-logo.png',
